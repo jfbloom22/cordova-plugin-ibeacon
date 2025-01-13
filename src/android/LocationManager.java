@@ -16,6 +16,11 @@
        specific language governing permissions and limitations
        under the License.
 */
+
+/*
+Foreground service for Android 14. Scan Period set back to default 1100
+*/
+
 package com.unarin.cordova.beacon;
 
 import android.Manifest;
@@ -72,6 +77,11 @@ import java.util.Collection;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+
 @TargetApi(Build.VERSION_CODES.JELLY_BEAN)
 public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
@@ -84,8 +94,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     private static final int DEFAULT_SAMPLE_EXPIRATION_MILLISECOND = 20000;
     private static final String ENABLE_ARMA_FILTER_NAME = "com.unarin.cordova.beacon.android.altbeacon.EnableArmaFilter";
     private static final boolean DEFAULT_ENABLE_ARMA_FILTER = false;
-    private static final String REQUEST_BT_PERMISSION_NAME = "com.unarin.cordova.beacon.android.altbeacon.RequestBtPermission";
-    private static final boolean DEFAULT_REQUEST_BT_PERMISSION = true;
+    //private static final int DEFAULT_FOREGROUND_SCAN_PERIOD = 1100;
     private static final int DEFAULT_FOREGROUND_SCAN_PERIOD = 1100;
     private static int CDV_LOCATION_MANAGER_DOM_DELEGATE_TIMEOUT = 30;
     private static final int BUILD_VERSION_CODES_M = 23;
@@ -102,7 +111,10 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     private BroadcastReceiver broadcastReceiver;
     private BluetoothAdapter bluetoothAdapter;
 
-
+    private static final int PERMISSION_REQUEST_FINE_LOCATION = 1001;
+    private static final int PERMISSION_REQUEST_BACKGROUND_LOCATION = 1002;
+    // Flag to determine if background access is requested
+    private boolean backgroundAccessRequested = false;
     /**
      * Constructor.
      */
@@ -134,6 +146,45 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         iBeaconManager.setForegroundBetweenScanPeriod(foregroundBetweenScanPeriod);
         iBeaconManager.setForegroundScanPeriod(foregroundScanPeriod);
 
+        
+        // Uncomment the code below to use a foreground service to scan for beacons. This unlocks
+        // the ability to continually scan for long periods of time in the background on Andorid 8+
+        // in exchange for showing an icon at the top of the screen and a always-on notification to
+        // communicate to users that your app is using resources in the background.
+        //
+
+     
+        Notification.Builder builder = new Notification.Builder(cordovaActivity);
+        //builder.setSmallIcon(R.drawable.ic_launcher);
+        builder.setContentTitle("Scanning for Beacons");
+        Intent intent = new Intent(cordovaActivity, LocationManager.class);
+        PendingIntent pendingIntent = PendingIntent.getActivity(
+                cordovaActivity, 0, intent, PendingIntent.FLAG_IMMUTABLE
+        );
+        builder.setContentIntent(pendingIntent);
+        //if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel("Simpple Beacons Detections",
+                    "Simpple Beacons Detections", NotificationManager.IMPORTANCE_DEFAULT);
+            channel.setDescription("Simpple Beacons Detections");
+            //NotificationManager notificationManager = (NotificationManager) getSystemService(
+            //        Context.NOTIFICATION_SERVICE);
+            NotificationManager notificationManager = (NotificationManager) cordovaActivity.getSystemService(Context.NOTIFICATION_SERVICE);
+
+            notificationManager.createNotificationChannel(channel);
+            builder.setChannelId(channel.getId());
+       // }
+        iBeaconManager.enableForegroundServiceScanning(builder.build(), 456);
+
+        // For the above foreground scanning service to be useful, you need to disable
+        // JobScheduler-based scans (used on Android 8+) and set a fast background scan
+        // cycle that would otherwise be disallowed by the operating system.
+        //
+        iBeaconManager.setEnableScheduledScanJobs(false);
+        iBeaconManager.setIntentScanningStrategyEnabled(true);
+        iBeaconManager.setBackgroundBetweenScanPeriod(0);
+        iBeaconManager.setBackgroundScanPeriod(DEFAULT_FOREGROUND_SCAN_PERIOD);
+
+       
         final int sampleExpirationMilliseconds = this.preferences.getInteger(
                 SAMPLE_EXPIRATION_MILLISECOND, DEFAULT_SAMPLE_EXPIRATION_MILLISECOND);
 
@@ -165,11 +216,9 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         }
         //TODO AddObserver when page loaded
 
-        final boolean requestPermission = this.preferences.getBoolean(
-                REQUEST_BT_PERMISSION_NAME, DEFAULT_REQUEST_BT_PERMISSION);
-           
-        if(requestPermission)
-              tryToRequestMarshmallowLocationPermission();
+       //tryToRequestMarshmallowLocationPermission();
+       //requestForLocationsPermissions();
+       //tryToRequestPermissionsSequentially();
     }
 
     /**
@@ -274,80 +323,222 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         return this.beaconTransmitter;
     }
 
-    @TargetApi(BUILD_VERSION_CODES_M)
+
+
+    /**
+     * Initiates the permission request flow.
+     */
+    @SuppressLint("NewApi")
+    @TargetApi(Build.VERSION_CODES.M)
     private void tryToRequestMarshmallowLocationPermission() {
+        Activity activity = cordova.getActivity();
 
-        if (Build.VERSION.SDK_INT < BUILD_VERSION_CODES_M) {
-            Log.i(TAG, "tryToRequestMarshmallowLocationPermission() skipping because API code is " +
-                    "below criteria: " + String.valueOf(Build.VERSION.SDK_INT));
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            Log.i(TAG, "Skipping permission request as API level is below Marshmallow: " +
+                    Build.VERSION.SDK_INT);
             return;
         }
 
-        final Activity activity = cordova.getActivity();
-
-        final Method checkSelfPermissionMethod = getCheckSelfPermissionMethod();
-
-        if (checkSelfPermissionMethod == null) {
-            Log.e(TAG, "Could not obtain the method Activity.checkSelfPermission method. Will " +
-                    "not check for ACCESS_COARSE_LOCATION even though we seem to be on a " +
-                    "supported version of Android.");
+        // Check if ACCESS_FINE_LOCATION is granted
+        if (activity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            Log.i(TAG, "ACCESS_FINE_LOCATION permission already granted.");
+            // Proceed to check for background location if needed
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && backgroundAccessRequested) {
+                checkAndRequestBackgroundLocationPermission();
+            }
             return;
         }
 
-        try {
+        // Show rationale and request ACCESS_FINE_LOCATION
+        showForegroundPermissionRationale();
+    }
 
-            final Integer permissionCheckResult = (Integer) checkSelfPermissionMethod.invoke(
-                    activity, Manifest.permission.ACCESS_COARSE_LOCATION);
 
-            Log.i(TAG, "Permission check result for ACCESS_COARSE_LOCATION: " +
-                    String.valueOf(permissionCheckResult));
+    @TargetApi(Build.VERSION_CODES.M)
+    private void tryToRequestPermissionsSequentially() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            final Activity activity = cordova.getActivity();
 
-            if (permissionCheckResult == PackageManager.PERMISSION_GRANTED) {
-                Log.i(TAG, "Permission for ACCESS_COARSE_LOCATION has already been granted.");
-                return;
-            }
-
-            final Method requestPermissionsMethod = getRequestPermissionsMethod();
-
-            if (requestPermissionsMethod == null) {
-                Log.e(TAG, "Could not obtain the method Activity.requestPermissions. Will " +
-                        "not ask for ACCESS_COARSE_LOCATION even though we seem to be on a " +
-                        "supported version of Android.");
-                return;
-            }
-
-            final AlertDialog.Builder builder = new AlertDialog.Builder(activity);
-            builder.setTitle("This app needs location access");
-            builder.setMessage("Please grant location access so this app can detect beacons.");
-            builder.setPositiveButton(android.R.string.ok, null);
-            builder.setOnDismissListener(new DialogInterface.OnDismissListener() {
-                @SuppressLint("NewApi")
-                @Override
-                public void onDismiss(final DialogInterface dialog) {
-
-                    try {
-                        requestPermissionsMethod.invoke(activity,
-                                new String[]{Manifest.permission.ACCESS_COARSE_LOCATION},
-                                PERMISSION_REQUEST_COARSE_LOCATION
-                        );
-                    } catch (IllegalAccessException e) {
-                        Log.e(TAG, "IllegalAccessException while requesting permission for " +
-                                "ACCESS_COARSE_LOCATION:", e);
-                    } catch (InvocationTargetException e) {
-                        Log.e(TAG, "InvocationTargetException while requesting permission for " +
-                                "ACCESS_COARSE_LOCATION:", e);
-                    }
+            // Check for FINE_LOCATION permission
+            if (activity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                requestFineLocationPermission(activity);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // If FINE_LOCATION is granted, check for BACKGROUND_LOCATION permission
+                if (activity.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                    requestBackgroundLocationPermission(activity);
+                } else {
+                    Log.i(TAG, "All required location permissions are already granted.");
                 }
-            });
-
-            builder.show();
-
-        } catch (final IllegalAccessException e) {
-            Log.w(TAG, "IllegalAccessException while checking for ACCESS_COARSE_LOCATION:", e);
-        } catch (final InvocationTargetException e) {
-            Log.w(TAG, "InvocationTargetException while checking for ACCESS_COARSE_LOCATION:", e);
+            } else {
+                Log.i(TAG, "FINE_LOCATION permission granted, and BACKGROUND_LOCATION not required.");
+            }
+        } else {
+            Log.i(TAG, "Skipping permissions check as the API level is below M.");
         }
     }
+
+
+    private void requestFineLocationPermission(final Activity activity) {
+        new AlertDialog.Builder(activity)
+                .setTitle("Location Permission Required")
+                .setMessage("Please grant access to precise location to enable beacon detection.")
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    @SuppressLint("NewApi")
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        activity.requestPermissions(
+                                new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                                PERMISSION_REQUEST_FINE_LOCATION
+                        );
+                    }
+                })
+                .show();
+    }
+
+    /**
+     * Shows a dialog explaining why ACCESS_FINE_LOCATION is needed and requests the permission.
+     */
+    private void showForegroundPermissionRationale() {
+        Activity activity = cordova.getActivity();
+
+        new AlertDialog.Builder(activity)
+                .setTitle("Location Permission Needed")
+                .setMessage("This app requires precise location access to detect beacons.")
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                       // Request ACCESS_FINE_LOCATION permission
+                       requestForegroundLocationPermission();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                       Log.e(TAG, "ACCESS_FINE_LOCATION permission denied by user.");
+                    }
+                })
+                .setCancelable(false)
+                .show();
+    }
+
+    /**
+     * Requests the ACCESS_FINE_LOCATION permission.
+     */
+    @SuppressLint("NewApi")
+    private void requestForegroundLocationPermission() {
+        Activity activity = cordova.getActivity();
+        activity.requestPermissions(
+                new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                PERMISSION_REQUEST_FINE_LOCATION
+        );
+    }
+
+    /**
+     * Checks and requests ACCESS_BACKGROUND_LOCATION permission if needed.
+     */
+    @SuppressLint("NewApi")
+    private void checkAndRequestBackgroundLocationPermission() {
+        Activity activity = cordova.getActivity();
+
+        if (activity.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            Log.i(TAG, "ACCESS_BACKGROUND_LOCATION permission already granted.");
+            return;
+        }
+
+        // Show rationale and request ACCESS_BACKGROUND_LOCATION
+        showBackgroundPermissionRationale();
+    }
+
+    /**
+     * Shows a dialog explaining why ACCESS_BACKGROUND_LOCATION is needed and requests the permission.
+     */
+    private void showBackgroundPermissionRationale() {
+        Activity activity = cordova.getActivity();
+
+        new AlertDialog.Builder(activity)
+                .setTitle("Background Location Permission Needed")
+                .setMessage("This app needs background location access to detect beacons even when the app is not in use.")
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                       // Request ACCESS_BACKGROUND_LOCATION permission
+                       requestBackgroundLocationPermission(activity);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                       Log.e(TAG, "ACCESS_BACKGROUND_LOCATION permission denied by user.");
+                    }
+                })
+                .setCancelable(false)
+                .show();
+    }
+
+    /**
+     * Requests the ACCESS_BACKGROUND_LOCATION permission.
+     */
+    private void requestBackgroundLocationPermission(final Activity activity) {
+        new AlertDialog.Builder(activity)
+                .setTitle("Background Location Permission Required")
+                .setMessage("Please grant access to location 'All the Time' to enable background functionality.")
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    @SuppressLint("NewApi")
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        activity.requestPermissions(
+                                new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION},
+                                PERMISSION_REQUEST_BACKGROUND_LOCATION
+                        );
+                    }
+                })
+                .show();
+    }
+
+    /**
+     * Call this method to start the permission request process.
+     * Set backgroundAccessRequested to true if you need background access.
+     */
+    public void requestLocationPermissions(boolean requestBackground) {
+        this.backgroundAccessRequested = requestBackground;
+        tryToRequestMarshmallowLocationPermission();
+    }
+
+    /**
+     * Handles the results of permission requests.
+     */
+
+    @Override
+    public void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults) {
+        try {
+            super.onRequestPermissionResult(requestCode, permissions, grantResults);
+        } catch (JSONException e) {
+            Log.e(TAG, "JSONException while processing permission results", e);
+        }
+
+        Activity activity = cordova.getActivity();
+
+        if (requestCode == PERMISSION_REQUEST_FINE_LOCATION) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Log.i(TAG, "FINE_LOCATION permission granted.");
+                // Proceed to request BACKGROUND_LOCATION if required
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    requestBackgroundLocationPermission(activity);
+                }
+            } else {
+                Log.e(TAG, "FINE_LOCATION permission denied.");
+            }
+        } else if (requestCode == PERMISSION_REQUEST_BACKGROUND_LOCATION) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Log.i(TAG, "BACKGROUND_LOCATION permission granted.");
+            } else {
+                Log.e(TAG, "BACKGROUND_LOCATION permission denied.");
+            }
+        }
+    }
+
+
+
 
     private Method getCheckSelfPermissionMethod() {
         try {
@@ -897,7 +1088,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     }
 
     private void startRangingBeaconsInRegion(final JSONObject arguments, final CallbackContext callbackContext) {
-
+        
         _handleCallSafely(callbackContext, new ILocationManagerCommand() {
 
             @Override
@@ -993,6 +1184,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     }
 
     private void requestAlwaysAuthorization(CallbackContext callbackContext) {
+        tryToRequestPermissionsSequentially();
         _handleCallSafely(callbackContext, new ILocationManagerCommand() {
 
             @Override
@@ -1312,11 +1504,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         if (!json.has("radius"))
             throw new InvalidKeyException("'radius' is missing, cannot parse CircularRegion.");
 
-     	/*String identifier = json.getString("identifier");
-         double latitude = json.getDouble("latitude");
-     	double longitude = json.getDouble("longitude");
-     	double radius = json.getDouble("radius");
-    	*/
+ 
         throw new UnsupportedOperationException("Circular regions are not supported at present");
     }
 
@@ -1389,7 +1577,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
 
         // identifier
         if (region.getUniqueId() != null) {
-       	 dict.put("identifier", region.getUniqueId());
+             dict.put("identifier", region.getUniqueId());
        }
 
        //NOT SUPPORTING CIRCULAR REGIONS
@@ -1552,5 +1740,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         debugLog("Bind to IBeacon service");
         return cordova.getActivity().bindService(intent, connection, mode);
     }
+
+
 
 }
