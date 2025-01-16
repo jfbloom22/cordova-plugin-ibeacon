@@ -18,7 +18,7 @@
 */
 
 /*
-Only ask foreground service when all permission
+Disable foreground service for Android 14 sdk 34
 */
 /*
 Foreground service for Android 14. Scan Period set back to default 1100
@@ -118,8 +118,6 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     private static final int PERMISSION_REQUEST_BACKGROUND_LOCATION = 1002;
     // Flag to determine if background access is requested
     private boolean backgroundAccessRequested = false;
-    private boolean isForegroundServiceEnabled = false;
-
     /**
      * Constructor.
      */
@@ -158,39 +156,37 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         // communicate to users that your app is using resources in the background.
         //
 
+        if (Build.VERSION.SDK_INT < 34) { // For Android versions lower than 14 SDK 34, enable Foreground service
+	        Notification.Builder builder = new Notification.Builder(cordovaActivity);
+	        //builder.setSmallIcon(R.drawable.ic_launcher);
+	        builder.setContentTitle("Scanning for Beacons");
+	        Intent intent = new Intent(cordovaActivity, LocationManager.class);
+	        PendingIntent pendingIntent = PendingIntent.getActivity(
+	                cordovaActivity, 0, intent, PendingIntent.FLAG_IMMUTABLE
+	        );
+	        builder.setContentIntent(pendingIntent);
+	        //if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+	            NotificationChannel channel = new NotificationChannel("Simpple Beacons Detections",
+	                    "Simpple Beacons Detections", NotificationManager.IMPORTANCE_DEFAULT);
+	            channel.setDescription("Simpple Beacons Detections");
+	            //NotificationManager notificationManager = (NotificationManager) getSystemService(
+	            //        Context.NOTIFICATION_SERVICE);
+	            NotificationManager notificationManager = (NotificationManager) cordovaActivity.getSystemService(Context.NOTIFICATION_SERVICE);
 
-        // Notification.Builder builder = new Notification.Builder(cordovaActivity);
-        // // Uncomment and set your small icon if needed
-        // // builder.setSmallIcon(R.drawable.ic_launcher);
-        // builder.setContentTitle("Scanning for Beacons");
-        // Intent intent = new Intent(cordovaActivity, LocationManager.class);
-        // PendingIntent pendingIntent = PendingIntent.getActivity(
-        //         cordovaActivity, 0, intent, PendingIntent.FLAG_IMMUTABLE
-        // );
-        // builder.setContentIntent(pendingIntent);
+	            notificationManager.createNotificationChannel(channel);
+	            builder.setChannelId(channel.getId());
+	       // }
+	        iBeaconManager.enableForegroundServiceScanning(builder.build(), 456);
 
-        // if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) { // Check for Android 8+ for NotificationChannel
-        //     NotificationChannel channel = new NotificationChannel(
-        //             "Simpple Beacons Detections",
-        //             "Simpple Beacons Detections",
-        //             NotificationManager.IMPORTANCE_DEFAULT
-        //     );
-        //     channel.setDescription("Simpple Beacons Detections");
-        //     NotificationManager notificationManager = 
-        //             (NotificationManager) cordovaActivity.getSystemService(Context.NOTIFICATION_SERVICE);
-        //     notificationManager.createNotificationChannel(channel);
-        //     builder.setChannelId(channel.getId());
-        // }
-
-        // iBeaconManager.enableForegroundServiceScanning(builder.build(), 456);
-
-        // // Configure scanning for older Android versions
-        // iBeaconManager.setEnableScheduledScanJobs(false);
-        // iBeaconManager.setIntentScanningStrategyEnabled(true);
-        // iBeaconManager.setBackgroundBetweenScanPeriod(0);
-        // iBeaconManager.setBackgroundScanPeriod(DEFAULT_FOREGROUND_SCAN_PERIOD);
-    
-
+	        // For the above foreground scanning service to be useful, you need to disable
+	        // JobScheduler-based scans (used on Android 8+) and set a fast background scan
+	        // cycle that would otherwise be disallowed by the operating system.
+	        //
+	        iBeaconManager.setEnableScheduledScanJobs(false);
+	        iBeaconManager.setIntentScanningStrategyEnabled(true);
+	        iBeaconManager.setBackgroundBetweenScanPeriod(0);
+	        iBeaconManager.setBackgroundScanPeriod(DEFAULT_FOREGROUND_SCAN_PERIOD);
+        }
        
         final int sampleExpirationMilliseconds = this.preferences.getInteger(
                 SAMPLE_EXPIRATION_MILLISECOND, DEFAULT_SAMPLE_EXPIRATION_MILLISECOND);
@@ -214,7 +210,7 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         initEventQueue();
         pauseEventPropagationToDom(); // Before the DOM is loaded we'll just keep collecting the events and fire them later.
 
-        //initLocationManager();
+        initLocationManager();
 
         debugEnabled = true;
 
@@ -375,8 +371,6 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
                     requestBackgroundLocationPermission(activity);
                 } else {
                     Log.i(TAG, "All required location permissions are already granted.");
-                    enableForeGroundService();
-                    initLocationManager();
                 }
             } else {
                 Log.i(TAG, "FINE_LOCATION permission granted, and BACKGROUND_LOCATION not required.");
@@ -1751,67 +1745,5 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
     }
 
 
-    private void enableForeGroundService() {
-        final Activity cordovaActivity = cordova.getActivity();
-
-        // Check if foreground service is already enabled
-        if (isForegroundServiceEnabled) {
-            Log.i(TAG, "Foreground service is already enabled.");
-            return;
-        }
-
-        // Check if iBeaconManager is already bound
-        if (iBeaconManager != null && iBeaconManager.isBound(this)) {
-            Log.i(TAG, "iBeaconManager is already bound. Cannot reconfigure foreground service.");
-            return;
-        }
-
-        final int foregroundBetweenScanPeriod = this.preferences.getInteger(
-                FOREGROUND_BETWEEN_SCAN_PERIOD_NAME, DEFAULT_FOREGROUND_BETWEEN_SCAN_PERIOD);
-
-        final int foregroundScanPeriod = this.preferences.getInteger(
-                FOREGROUND_SCAN_PERIOD_NAME, DEFAULT_FOREGROUND_SCAN_PERIOD);
-
-        Log.i(TAG, "Determined config value FOREGROUND_SCAN_PERIOD: " +
-                String.valueOf(foregroundScanPeriod));
-
-        iBeaconManager = BeaconManager.getInstanceForApplication(cordovaActivity);
-        iBeaconManager.setForegroundBetweenScanPeriod(foregroundBetweenScanPeriod);
-        iBeaconManager.setForegroundScanPeriod(foregroundScanPeriod);
-
-        Notification.Builder builder = new Notification.Builder(cordovaActivity);
-        // Uncomment and set your small icon if needed
-        // builder.setSmallIcon(R.drawable.ic_launcher);
-        builder.setContentTitle("Scanning for Beacons");
-        Intent intent = new Intent(cordovaActivity, LocationManager.class);
-        PendingIntent pendingIntent = PendingIntent.getActivity(
-                cordovaActivity, 0, intent, PendingIntent.FLAG_IMMUTABLE
-        );
-        builder.setContentIntent(pendingIntent);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) { // Check for Android 8+ for NotificationChannel
-            NotificationChannel channel = new NotificationChannel(
-                    "Simpple Beacons Detections",
-                    "Simpple Beacons Detections",
-                    NotificationManager.IMPORTANCE_DEFAULT
-            );
-            channel.setDescription("Simpple Beacons Detections");
-            NotificationManager notificationManager =
-                    (NotificationManager) cordovaActivity.getSystemService(Context.NOTIFICATION_SERVICE);
-            notificationManager.createNotificationChannel(channel);
-            builder.setChannelId(channel.getId());
-        }
-
-        iBeaconManager.enableForegroundServiceScanning(builder.build(), 456);
-
-        // Configure scanning for older Android versions
-        iBeaconManager.setEnableScheduledScanJobs(false);
-        iBeaconManager.setIntentScanningStrategyEnabled(true);
-        iBeaconManager.setBackgroundBetweenScanPeriod(0);
-        iBeaconManager.setBackgroundScanPeriod(DEFAULT_FOREGROUND_SCAN_PERIOD);
-
-        isForegroundServiceEnabled = true; // Mark as enabled
-        Log.i(TAG, "Foreground service has been enabled.");
-    }
 
 }
