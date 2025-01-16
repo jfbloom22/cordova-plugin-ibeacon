@@ -18,6 +18,9 @@
 */
 
 /*
+Disable foreground service
+*/
+/*
 Foreground service for Android 14. Scan Period set back to default 1100
 */
 
@@ -153,36 +156,36 @@ public class LocationManager extends CordovaPlugin implements BeaconConsumer {
         // communicate to users that your app is using resources in the background.
         //
 
-     
-        Notification.Builder builder = new Notification.Builder(cordovaActivity);
-        //builder.setSmallIcon(R.drawable.ic_launcher);
-        builder.setContentTitle("Scanning for Beacons");
-        Intent intent = new Intent(cordovaActivity, LocationManager.class);
-        PendingIntent pendingIntent = PendingIntent.getActivity(
-                cordovaActivity, 0, intent, PendingIntent.FLAG_IMMUTABLE
-        );
-        builder.setContentIntent(pendingIntent);
-        //if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel("Simpple Beacons Detections",
-                    "Simpple Beacons Detections", NotificationManager.IMPORTANCE_DEFAULT);
-            channel.setDescription("Simpple Beacons Detections");
-            //NotificationManager notificationManager = (NotificationManager) getSystemService(
-            //        Context.NOTIFICATION_SERVICE);
-            NotificationManager notificationManager = (NotificationManager) cordovaActivity.getSystemService(Context.NOTIFICATION_SERVICE);
+	  
+	    //     Notification.Builder builder = new Notification.Builder(cordovaActivity);
+	    //     //builder.setSmallIcon(R.drawable.ic_launcher);
+	    //     builder.setContentTitle("Scanning for Beacons");
+	    //     Intent intent = new Intent(cordovaActivity, LocationManager.class);
+	    //     PendingIntent pendingIntent = PendingIntent.getActivity(
+	    //             cordovaActivity, 0, intent, PendingIntent.FLAG_IMMUTABLE
+	    //     );
+	    //     builder.setContentIntent(pendingIntent);
+	    //     //if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+	    //         NotificationChannel channel = new NotificationChannel("Simpple Beacons Detections",
+	    //                 "Simpple Beacons Detections", NotificationManager.IMPORTANCE_DEFAULT);
+	    //         channel.setDescription("Simpple Beacons Detections");
+	    //         //NotificationManager notificationManager = (NotificationManager) getSystemService(
+	    //         //        Context.NOTIFICATION_SERVICE);
+	    //         NotificationManager notificationManager = (NotificationManager) cordovaActivity.getSystemService(Context.NOTIFICATION_SERVICE);
 
-            notificationManager.createNotificationChannel(channel);
-            builder.setChannelId(channel.getId());
-       // }
-        iBeaconManager.enableForegroundServiceScanning(builder.build(), 456);
+	    //         notificationManager.createNotificationChannel(channel);
+	    //         builder.setChannelId(channel.getId());
+	    //    // }
+	    //     iBeaconManager.enableForegroundServiceScanning(builder.build(), 456);
 
-        // For the above foreground scanning service to be useful, you need to disable
-        // JobScheduler-based scans (used on Android 8+) and set a fast background scan
-        // cycle that would otherwise be disallowed by the operating system.
-        //
-        iBeaconManager.setEnableScheduledScanJobs(false);
-        iBeaconManager.setIntentScanningStrategyEnabled(true);
-        iBeaconManager.setBackgroundBetweenScanPeriod(0);
-        iBeaconManager.setBackgroundScanPeriod(DEFAULT_FOREGROUND_SCAN_PERIOD);
+	    //     // For the above foreground scanning service to be useful, you need to disable
+	    //     // JobScheduler-based scans (used on Android 8+) and set a fast background scan
+	    //     // cycle that would otherwise be disallowed by the operating system.
+	    //     //
+	    //     iBeaconManager.setEnableScheduledScanJobs(false);
+	    //     iBeaconManager.setIntentScanningStrategyEnabled(true);
+	    //     iBeaconManager.setBackgroundBetweenScanPeriod(0);
+	    //     iBeaconManager.setBackgroundScanPeriod(DEFAULT_FOREGROUND_SCAN_PERIOD);
 
        
         final int sampleExpirationMilliseconds = this.preferences.getInteger(
