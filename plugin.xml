@@ -104,6 +104,13 @@
                 <!-- Below is only needed if you want to read the device name or establish a bluetooth connection
                 -->
                 <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+                <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" /> 
+        </config-file>
+
+        <config-file target="AndroidManifest.xml" parent="/manifest/application">
+            <service android:name="org.altbeacon.beacon.service.BeaconService" tools:node="replace">
+                <meta-data android:name="longScanForcingEnabled" android:value="true" />
+            </service>
         </config-file>
 
         <source-file src="src/android/LocationManager.java" target-dir="src/com/unarin/cordova/beacon" />
